@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Takoyaki3 Blog Writer 操作UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #141414;
+        --muted: #4d4d4d;
+        --accent: #ff6b3d;
+        --accent-2: #0b7a75;
+        --card: #ffffff;
+        --bg1: #f8efe4;
+        --bg2: #e7f2ff;
+        --shadow: 0 18px 40px rgba(20, 20, 20, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 10% 15%, var(--bg2), transparent 45%),
+          radial-gradient(circle at 85% 20%, #ffe8d6, transparent 42%),
+          linear-gradient(135deg, var(--bg1), #ffffff);
+        min-height: 100vh;
+        padding: 32px 18px 64px;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: repeating-linear-gradient(
+            120deg,
+            rgba(0, 0, 0, 0.02),
+            rgba(0, 0, 0, 0.02) 2px,
+            transparent 2px,
+            transparent 14px
+          ),
+          repeating-linear-gradient(
+            20deg,
+            rgba(0, 0, 0, 0.015),
+            rgba(0, 0, 0, 0.015) 1px,
+            transparent 1px,
+            transparent 12px
+          );
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .page {
+        position: relative;
+        z-index: 1;
+        max-width: 1080px;
+        margin: 0 auto;
+        display: grid;
+        gap: 28px;
+      }
+
+      .hero {
+        background: var(--card);
+        border-radius: 28px;
+        padding: 30px 32px;
+        box-shadow: var(--shadow);
+        display: grid;
+        gap: 14px;
+        animation: rise 0.6s ease forwards;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: var(--accent-2);
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Fraunces", "Georgia", serif;
+        font-weight: 700;
+        font-size: clamp(2.2rem, 3vw, 3rem);
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1rem;
+      }
+
+      .api-line {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.95rem;
+      }
+
+      .api-value {
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255, 107, 61, 0.1);
+        color: var(--ink);
+        font-weight: 600;
+        word-break: break-all;
+      }
+
+      .grid {
+        display: grid;
+        gap: 22px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .card {
+        background: var(--card);
+        border-radius: 22px;
+        padding: 24px;
+        box-shadow: var(--shadow);
+        display: grid;
+        gap: 14px;
+        opacity: 0;
+        transform: translateY(12px);
+        animation: rise 0.7s ease forwards;
+        animation-delay: var(--delay);
+      }
+
+      .card h2 {
+        margin: 0;
+        font-size: 1.2rem;
+      }
+
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.1);
+        font: inherit;
+        background: #fffaf6;
+      }
+
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: none;
+        border-radius: 999px;
+        padding: 10px 18px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--accent);
+        color: white;
+        box-shadow: 0 12px 24px rgba(255, 107, 61, 0.28);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 28px rgba(255, 107, 61, 0.32);
+      }
+
+      button.secondary {
+        background: #111;
+      }
+
+      .status {
+        font-size: 0.85rem;
+        color: var(--accent-2);
+        font-weight: 600;
+      }
+
+      .log {
+        background: #101415;
+        color: #dbe2e8;
+        border-radius: 16px;
+        padding: 14px;
+        font-size: 0.85rem;
+        min-height: 120px;
+        white-space: pre-wrap;
+      }
+
+      .article {
+        background: #f8f4ef;
+        color: #1f1f1f;
+        border-radius: 16px;
+        padding: 14px;
+        font-size: 0.85rem;
+        min-height: 160px;
+        white-space: pre-wrap;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+      }
+
+      .meta {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 640px) {
+        body {
+          padding: 20px 14px 48px;
+        }
+
+        .hero {
+          padding: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <span class="badge">最小操作コンソール</span>
+        <h1>Takoyaki3 Blog Writer</h1>
+        <p>写真をアップロードし、メタデータを抽出して下書きを生成します。</p>
+        <div class="api-line">
+          <span>API エンドポイント</span>
+          <span class="api-value" id="apiEndpoint">読み込み中...</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card" style="--delay: 0.1s">
+          <h2>1. 写真をアップロード</h2>
+          <p>署名付きURLを作成し、ファイルをアップロードしてEXIF処理をキューに入れます。</p>
+          <label>
+            ユーザーID
+            <input id="userId" placeholder="任意" />
+          </label>
+          <label>
+            写真ファイル（複数選択可）
+            <input id="photoFile" type="file" accept="image/*" multiple />
+          </label>
+          <div class="actions">
+            <button id="uploadBtn">作成してアップロード</button>
+            <span class="status" id="uploadStatus">待機中</span>
+          </div>
+        </div>
+
+        <div class="card" style="--delay: 0.2s">
+          <h2>2. 記事生成</h2>
+          <p>1つ以上のアップロードIDで下書き生成をキューに入れます。</p>
+          <label>
+            アップロードID（カンマ区切り）
+            <input id="uploadIds" placeholder="uuid-1, uuid-2" />
+          </label>
+          <label>
+            文体
+            <select id="tone">
+              <option value="polite">丁寧</option>
+              <option value="casual">カジュアル</option>
+              <option value="formal">フォーマル</option>
+            </select>
+          </label>
+          <label>
+            長さ
+            <select id="length">
+              <option value="short">短め</option>
+              <option value="medium" selected>標準</option>
+              <option value="long">長め</option>
+            </select>
+          </label>
+          <label>
+            言語
+            <select id="language">
+              <option value="ja" selected>日本語</option>
+              <option value="en">英語</option>
+            </select>
+          </label>
+          <label>
+            公開範囲
+            <select id="privacy">
+              <option value="area" selected>エリア</option>
+              <option value="city">市区町村</option>
+              <option value="exact">詳細</option>
+            </select>
+          </label>
+          <label>
+            指示
+            <textarea id="instruction" placeholder="任意"></textarea>
+          </label>
+          <div class="actions">
+            <button id="generateBtn">生成をキュー</button>
+            <span class="status" id="generateStatus">待機中</span>
+          </div>
+        </div>
+
+        <div class="card" style="--delay: 0.3s">
+          <h2>3. 再生成</h2>
+          <p>既存の記事IDで新しい下書きをキューに入れます。</p>
+          <label>
+            記事ID
+            <input id="articleId" placeholder="uuid" />
+          </label>
+          <label>
+            指示
+            <textarea id="regenerateInstruction" placeholder="任意"></textarea>
+          </label>
+          <div class="actions">
+            <button class="secondary" id="regenerateBtn">再生成をキュー</button>
+            <span class="status" id="regenerateStatus">待機中</span>
+          </div>
+        </div>
+
+        <div class="card" style="--delay: 0.4s">
+          <h2>4. 記事を確認</h2>
+          <p>記事IDから保存済みの内容を取得して表示します。</p>
+          <label>
+            記事ID
+            <input id="viewArticleId" placeholder="uuid" />
+          </label>
+          <div class="actions">
+            <button class="secondary" id="viewArticleBtn">記事を取得</button>
+            <span class="status" id="viewStatus">待機中</span>
+          </div>
+          <div class="meta" id="articleMeta"></div>
+          <pre class="article" id="articleOutput"></pre>
+        </div>
+
+        <div class="card" style="--delay: 0.5s">
+          <h2>アクティビティログ</h2>
+          <p>最新のイベントが上に表示されます。</p>
+          <pre class="log" id="log"></pre>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const state = { apiBaseUrl: "" };
+
+      const apiEndpointEl = document.getElementById("apiEndpoint");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const uploadStatus = document.getElementById("uploadStatus");
+      const generateBtn = document.getElementById("generateBtn");
+      const generateStatus = document.getElementById("generateStatus");
+      const regenerateBtn = document.getElementById("regenerateBtn");
+      const regenerateStatus = document.getElementById("regenerateStatus");
+      const viewArticleBtn = document.getElementById("viewArticleBtn");
+      const viewStatus = document.getElementById("viewStatus");
+      const articleOutput = document.getElementById("articleOutput");
+      const articleMeta = document.getElementById("articleMeta");
+      const logEl = document.getElementById("log");
+
+      function log(message) {
+        const stamp = new Date().toISOString();
+        logEl.textContent = `[${stamp}] ${message}\n${logEl.textContent}`;
+      }
+
+      function normalizeBaseUrl(value) {
+        return String(value || "").replace(/\/$/, "");
+      }
+
+      function updateApiLabel() {
+        apiEndpointEl.textContent = state.apiBaseUrl || "missing";
+      }
+
+      async function loadConfig() {
+        try {
+          const response = await fetch("config.json", { cache: "no-store" });
+          if (response.ok) {
+            const data = await response.json();
+            state.apiBaseUrl = normalizeBaseUrl(data.apiBaseUrl);
+          } else {
+            log("config.json が見つかりません");
+          }
+        } catch (error) {
+          log("config.json の読み込みに失敗しました");
+        }
+        updateApiLabel();
+      }
+
+      async function apiPost(path, payload) {
+        if (!state.apiBaseUrl) {
+          throw new Error("API ベースURLが未設定です");
+        }
+        const response = await fetch(`${state.apiBaseUrl}${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload || {}),
+        });
+        const text = await response.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (error) {
+          data = { raw: text };
+        }
+        if (!response.ok) {
+          const message = data.message || response.statusText;
+          throw new Error(`HTTP ${response.status}: ${message}`);
+        }
+        return data;
+      }
+
+      async function apiGet(path) {
+        if (!state.apiBaseUrl) {
+          throw new Error("API ベースURLが未設定です");
+        }
+        const response = await fetch(`${state.apiBaseUrl}${path}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+        const text = await response.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (error) {
+          data = { raw: text };
+        }
+        if (!response.ok) {
+          const message = data.message || response.statusText;
+          throw new Error(`HTTP ${response.status}: ${message}`);
+        }
+        return data;
+      }
+
+      uploadBtn.addEventListener("click", async () => {
+        const userId = document.getElementById("userId").value.trim();
+        const fileInput = document.getElementById("photoFile");
+        const files = Array.from(fileInput.files || []);
+        uploadStatus.textContent = "処理中";
+        try {
+          if (!files.length) {
+            throw new Error("写真ファイルを選択してください");
+          }
+          const uploadIds = [];
+          let failures = 0;
+
+          for (let index = 0; index < files.length; index += 1) {
+            const file = files[index];
+            uploadStatus.textContent = `処理中 (${index + 1}/${files.length})`;
+            try {
+              const contentType = file.type || "application/octet-stream";
+              const payload = {
+                filename: file.name,
+                content_type: contentType,
+              };
+              if (userId) {
+                payload.user_id = userId;
+              }
+              log(`アップロード作成中: ${file.name}`);
+              const createResult = await apiPost("/v1/uploads", payload);
+              log(`アップロード作成: ${createResult.upload_id} (${file.name})`);
+              await fetch(createResult.upload_url, {
+                method: "PUT",
+                headers: { "Content-Type": contentType },
+                body: file,
+              });
+              log(`アップロード完了: ${createResult.object_key}`);
+              await apiPost(`/v1/uploads/${createResult.upload_id}/complete`, {
+                object_key: createResult.object_key,
+              });
+              log(`EXIF処理をキューに投入: ${createResult.upload_id}`);
+              uploadIds.push(createResult.upload_id);
+            } catch (error) {
+              failures += 1;
+              log(`${file.name} のアップロードに失敗: ${error.message || "unknown error"}`);
+            }
+          }
+
+          if (!uploadIds.length) {
+            uploadStatus.textContent = "エラー";
+            return;
+          }
+
+          uploadStatus.textContent = failures
+            ? `完了: ${uploadIds.length}件 / 失敗: ${failures}件`
+            : `完了: ${uploadIds.length}件`;
+          document.getElementById("uploadIds").value = uploadIds.join(", ");
+        } catch (error) {
+          uploadStatus.textContent = "エラー";
+          log(error.message || "アップロードに失敗しました");
+        }
+      });
+
+      generateBtn.addEventListener("click", async () => {
+        const uploadIdsRaw = document.getElementById("uploadIds").value;
+        const uploadIds = uploadIdsRaw
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+        generateStatus.textContent = "処理中";
+        try {
+          if (!uploadIds.length) {
+            throw new Error("アップロードIDを入力してください");
+          }
+          const payload = {
+            upload_ids: uploadIds,
+            user_id: document.getElementById("userId").value.trim() || "anonymous",
+            tone: document.getElementById("tone").value,
+            length: document.getElementById("length").value,
+            language: document.getElementById("language").value,
+            privacy_level: document.getElementById("privacy").value,
+            instruction: document.getElementById("instruction").value.trim(),
+          };
+          log("記事生成をキューに投入中");
+          const result = await apiPost("/v1/articles/generate", payload);
+          generateStatus.textContent = `キュー投入: ${result.article_id}`;
+          document.getElementById("articleId").value = result.article_id || "";
+          document.getElementById("viewArticleId").value = result.article_id || "";
+          log(`生成ジョブ投入: ${result.run_id}`);
+        } catch (error) {
+          generateStatus.textContent = "エラー";
+          log(error.message || "記事生成に失敗しました");
+        }
+      });
+
+      regenerateBtn.addEventListener("click", async () => {
+        const articleId = document.getElementById("articleId").value.trim();
+        regenerateStatus.textContent = "処理中";
+        try {
+          if (!articleId) {
+            throw new Error("記事IDを入力してください");
+          }
+          const payload = {
+            tone: document.getElementById("tone").value,
+            length: document.getElementById("length").value,
+            language: document.getElementById("language").value,
+            privacy_level: document.getElementById("privacy").value,
+            instruction: document.getElementById("regenerateInstruction").value.trim(),
+          };
+          log(`再生成をキューに投入: ${articleId}`);
+          const result = await apiPost(`/v1/articles/${articleId}/regenerate`, payload);
+          regenerateStatus.textContent = `キュー投入: ${result.run_id}`;
+          log(`再生成ジョブ投入: ${result.run_id}`);
+        } catch (error) {
+          regenerateStatus.textContent = "エラー";
+          log(error.message || "再生成に失敗しました");
+        }
+      });
+
+      viewArticleBtn.addEventListener("click", async () => {
+        const articleId = document.getElementById("viewArticleId").value.trim();
+        viewStatus.textContent = "処理中";
+        articleOutput.textContent = "";
+        articleMeta.textContent = "";
+        try {
+          if (!articleId) {
+            throw new Error("記事IDを入力してください");
+          }
+          log(`記事取得: ${articleId}`);
+          const result = await apiGet(`/v1/articles/${articleId}`);
+          const article = result.article || {};
+          articleOutput.textContent = article.body_markdown || "(本文なし)";
+          const metaParts = [];
+          if (article.title) {
+            metaParts.push(`title: ${article.title}`);
+          }
+          if (article.status) {
+            metaParts.push(`status: ${article.status}`);
+          }
+          if (article.updated_at) {
+            metaParts.push(`updated_at: ${article.updated_at}`);
+          }
+          articleMeta.textContent = metaParts.join(" / ");
+          viewStatus.textContent = "取得完了";
+        } catch (error) {
+          viewStatus.textContent = "エラー";
+          log(error.message || "記事取得に失敗しました");
+        }
+      });
+
+      loadConfig();
+    </script>
+  </body>
+</html>
