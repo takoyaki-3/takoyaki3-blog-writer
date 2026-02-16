@@ -124,5 +124,5 @@ CDK デプロイ時にホスト先用の `config.json` を自動生成します�
 - 出力形式: JSON（`title`, `date`, `location`, `tags`, `body_markdown`, `capture_info`）
 
 ## 注意点
-- 本リポジトリ内では EXIF 抽出は未実装です。メタデータ worker は S3 の HEAD 情報と、SQS メッセージに含まれる GPS 情報を利用します。
+- EXIF 抽出は `exif_worker` で JPEG から行います。S3 の HEAD 情報に加えて EXIF 由来の撮影日時・カメラ情報・GPS を保存し、逆ジオコーディングに利用します。
 - 下書きは `ArticlesTable` の `body_markdown` と `body_json` に保存されます。
