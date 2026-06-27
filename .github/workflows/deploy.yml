@@ -1,0 +1,50 @@
+name: Deploy to AWS (prod)
+
+on:
+  push:
+    branches:
+      - prod
+  workflow_dispatch:
+
+# OIDC: allow GitHub Actions to assume an IAM role in the target AWS account.
+# No long-lived AWS access keys are stored in repository secrets.
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: CDK Deploy
+    runs-on: ubuntu-latest
+    env:
+      # The Gemini API key is passed to CDK as an environment variable so it
+      # becomes a Lambda environment variable. Stored as a GitHub Actions secret.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          # The deployment target region is fixed to Tokyo in the CDK stack
+          # definition. This input only sets the AWS session region for STS.
+          aws-region: ap-northeast-1
+
+      - name: CDK deploy
+        run: npx cdk deploy --require-approval never --all

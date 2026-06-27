@@ -5,6 +5,7 @@ import os
 import socket
 import time
 import urllib.error
+import traceback
 import urllib.request
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
@@ -13,14 +14,13 @@ from urllib.parse import urlparse
 import boto3
 
 ddb = boto3.resource("dynamodb")
-secrets = boto3.client("secretsmanager")
 s3 = boto3.client("s3")
 
 ARTICLES_TABLE = os.environ.get("ARTICLES_TABLE", "")
 UPLOADS_TABLE = os.environ.get("UPLOADS_TABLE", "")
 METADATA_TABLE = os.environ.get("METADATA_TABLE", "")
 GENERATION_RUNS_TABLE = os.environ.get("GENERATION_RUNS_TABLE", "")
-GEMINI_API_KEY_SECRET_ARN = os.environ.get("GEMINI_API_KEY_SECRET_ARN", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
 
 # Optional: allow tuning without code changes
@@ -29,8 +29,6 @@ GEMINI_TOP_P = float(os.environ.get("GEMINI_TOP_P", "0.95"))
 GEMINI_TOP_K = int(os.environ.get("GEMINI_TOP_K", "40"))
 GEMINI_REQUEST_TIMEOUT = float(os.environ.get("GEMINI_REQUEST_TIMEOUT", "600"))
 GEMINI_MAX_RETRIES = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
-
-_API_KEY_CACHE: Optional[str] = None
 
 
 def _build_markdown(title: str, created_at: str, privacy_level: str) -> str:
@@ -50,45 +48,9 @@ def _build_markdown(title: str, created_at: str, privacy_level: str) -> str:
 
 
 def _get_api_key() -> str:
-    global _API_KEY_CACHE
-    if _API_KEY_CACHE is not None:
-        return _API_KEY_CACHE
-    if not GEMINI_API_KEY_SECRET_ARN:
-        _API_KEY_CACHE = ""
-        return _API_KEY_CACHE
-    try:
-        response = secrets.get_secret_value(SecretId=GEMINI_API_KEY_SECRET_ARN)
-    except Exception as exc:
-        print(f"Failed to load Gemini API key: {exc}")
-        _API_KEY_CACHE = ""
-        return _API_KEY_CACHE
-
-    secret_value = response.get("SecretString")
-    if not secret_value and response.get("SecretBinary"):
-        try:
-            secret_value = base64.b64decode(response["SecretBinary"]).decode("utf-8")
-        except Exception as exc:
-            print(f"Failed to decode secret binary: {exc}")
-            secret_value = ""
-
-    if not isinstance(secret_value, str) or not secret_value.strip():
-        _API_KEY_CACHE = ""
-        return _API_KEY_CACHE
-
-    secret_value = secret_value.strip()
-    try:
-        payload = json.loads(secret_value)
-        if isinstance(payload, dict):
-            for key_name in ("apiKey", "key", "GEMINI_API_KEY"):
-                key_value = payload.get(key_name)
-                if isinstance(key_value, str) and key_value.strip():
-                    _API_KEY_CACHE = key_value.strip()
-                    return _API_KEY_CACHE
-    except json.JSONDecodeError:
-        pass
-
-    _API_KEY_CACHE = secret_value
-    return _API_KEY_CACHE
+    # The Gemini API key is provided as a Lambda environment variable
+    # (injected from GitHub Actions secrets) instead of Secrets Manager.
+    return GEMINI_API_KEY.strip()
 
 
 def _length_config(length: str) -> Tuple[int, str]:
@@ -518,20 +480,43 @@ def _build_prompt(
     retry: bool = False,
 ) -> Tuple[str, int]:
     language = payload.get("language") if isinstance(payload.get("language"), str) else "ja"
-    tone = _tone_label(payload.get("tone") if isinstance(payload.get("tone"), str) else "polite")
+    tone_input = payload.get("tone")
+    tone = _tone_label(tone_input if isinstance(tone_input, str) else "polite")
     length = payload.get("length") if isinstance(payload.get("length"), str) else "medium"
     privacy_level = payload.get("privacy_level") if isinstance(payload.get("privacy_level"), str) else "area"
     instruction = payload.get("instruction") if isinstance(payload.get("instruction"), str) else ""
     max_tokens, length_hint = _length_config(length)
-    language_hint = "Write in Japanese." if language == "ja" else "Write in English."
+
+    # Style Definition
+    style_guide = ""
+    if language == "ja":
+        style_guide = (
+            "Write in Japanese.\n"
+            "Style: 'Takoyaki3 blog style'.\n"
+            "- First person pronoun: '僕' (Boku).\n"
+            "- Tone: Polite 'Desu/Masu' (です・ます) but friendly and enthusiastic.\n"
+            "- Structure: Use short paragraphs (1-3 sentences). Leave empty lines between paragraphs.\n"
+            "- Transitions: Use 'さて、' (Sate,) to change topics.\n"
+            "- Ending: End with a friendly closing or a thought about the future.\n"
+            "- Vocabulary: Simple, accessible, slightly geeky but not stiff.\n"
+            "- Emoticons/Marks: Use '！' for enthusiasm. Avoid complex kaomoji unless necessary.\n"
+        )
+        if tone == "casual":
+             style_guide += "- Override: Use 'Da/Dearu' or very casual speech if explicitly requested, but default to 'Desu/Masu' for 'takoyaki3 style' unless 'casual' is heavily emphasized.\n"
+    else:
+        style_guide = (
+            "Write in English.\n"
+            "Style: Friendly, personal technical blog.\n"
+            "- First person: 'I'.\n"
+            "- Tone: Conversational but informative.\n"
+        )
 
     prompt = (
-        "You are drafting a blog post based on photo uploads.\n"
+        "You are writing a blog post for 'Takoyaki3'.\n"
         f"Photo count: {len(upload_ids)}.\n"
-        "Photos are provided as image inputs.\n"
-        f"{language_hint}\n"
-        f"Tone: {tone}.\n"
-        f"Length: {length_hint}.\n"
+        "Photos are provided as image inputs. Incorporate them into the story naturaly.\n"
+        f"{style_guide}\n"
+        f"Target Length: {length_hint}.\n"
         f"Privacy: {_privacy_guideline(privacy_level)}\n"
         "Do not invent specific camera, time, or location details. If unknown, use 'unknown' or 'unspecified'.\n"
         "Return JSON only, without code fences.\n"
@@ -559,18 +544,30 @@ def _build_prompt(
 
 def _build_expand_prompt(payload: Dict[str, Any], article_json: Dict[str, Any], min_chars: int) -> Tuple[str, int]:
     language = payload.get("language") if isinstance(payload.get("language"), str) else "ja"
-    tone = _tone_label(payload.get("tone") if isinstance(payload.get("tone"), str) else "polite")
+    tone_input = payload.get("tone")
+    tone = _tone_label(tone_input if isinstance(tone_input, str) else "polite")
     privacy_level = payload.get("privacy_level") if isinstance(payload.get("privacy_level"), str) else "area"
     instruction = payload.get("instruction") if isinstance(payload.get("instruction"), str) else ""
-    # NOTE: original code had a bug here; fixed to keep max_tokens as int.
     max_tokens, _ = _length_config(payload.get("length") if isinstance(payload.get("length"), str) else "medium")
-    language_hint = "Write in Japanese." if language == "ja" else "Write in English."
+
+    style_guide = ""
+    if language == "ja":
+        style_guide = (
+            "Write in Japanese.\n"
+            "Style: 'Takoyaki3 blog style'.\n"
+            "- First person: '僕' (Boku).\n"
+            "- Tone: Polite 'Desu/Masu' (です・ます) but friendly.\n"
+            "- Structure: Short paragraphs, use 'さて、'.\n"
+        )
+    else:
+        style_guide = "Write in English. Style: Friendly personal blog."
+
     draft = json.dumps(article_json, ensure_ascii=False)
 
     prompt = (
-        "You are improving an existing blog draft.\n"
+        "You are improving an existing blog draft for 'Takoyaki3'.\n"
         "Photos are provided as image inputs.\n"
-        f"{language_hint}\n"
+        f"{style_guide}\n"
         f"Tone: {tone}.\n"
         f"Privacy: {_privacy_guideline(privacy_level)}\n"
         f"Expand body_markdown to at least {min_chars} characters.\n"
@@ -635,6 +632,8 @@ def _call_gemini(
         f"?key={api_key}"
     )
 
+    print(f"DEBUG: Calling Gemini model={GEMINI_MODEL} with prompt length={len(prompt)}")
+
     # A対応（修正版）: responseSchema ではなく responseJsonSchema を使う
     response_json_schema = _build_response_json_schema()
 
@@ -655,6 +654,8 @@ def _call_gemini(
         },
     }
 
+    print(f"DEBUG: Gemini Request Body keys: {list(body.keys())}")
+
     request = urllib.request.Request(
         endpoint,
         data=json.dumps(body).encode("utf-8"),
@@ -664,45 +665,44 @@ def _call_gemini(
     last_exc: Optional[Exception] = None
     for attempt in range(GEMINI_MAX_RETRIES + 1):
         try:
+            print(f"DEBUG: Attempt {attempt+1}/{GEMINI_MAX_RETRIES+1} connecting to {endpoint}")
             with urllib.request.urlopen(request, timeout=GEMINI_REQUEST_TIMEOUT) as response:
                 raw = response.read()
-            last_exc = None
-            break
+                print(f"DEBUG: Gemini Response JSON length={len(raw)}")
+                # Success - parse and return
+                payload = json.loads(raw.decode("utf-8"))
+                candidates = payload.get("candidates") or []
+                if not candidates:
+                    print("DEBUG: No candidates in response")
+                    return "", GEMINI_MODEL
+                content = candidates[0].get("content") or {}
+                parts_list = content.get("parts") or []
+                text = "".join(part.get("text", "") for part in parts_list if isinstance(part, dict))
+                return text.strip(), GEMINI_MODEL
+
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Gemini API error: {exc.code} {detail}") from exc
-        except (socket.timeout, TimeoutError) as exc:
+            raw_err = exc.read().decode("utf-8", errors="ignore")
+            print(f"ERROR: HTTPError from Gemini: {exc.code} {exc.reason}\nBody: {raw_err}")
             last_exc = exc
-            if attempt >= GEMINI_MAX_RETRIES:
-                break
-            backoff = min(2 ** attempt, 8)
-            print(f"Gemini request timed out; retrying in {backoff}s (attempt {attempt + 1}).")
-            time.sleep(backoff)
-        except urllib.error.URLError as exc:
-            if isinstance(exc.reason, socket.timeout):
-                last_exc = exc
-                if attempt >= GEMINI_MAX_RETRIES:
-                    break
-                backoff = min(2 ** attempt, 8)
-                print(f"Gemini request timed out; retrying in {backoff}s (attempt {attempt + 1}).")
-                time.sleep(backoff)
-            else:
-                raise RuntimeError(f"Gemini API request failed: {exc}") from exc
+            # Check for 429 or 5xx to retry? For now, we log and break to show the error.
+            if exc.code in [429, 500, 502, 503, 504]:
+                 time.sleep(min(2 ** attempt, 8))
+                 continue
+            break
+        except (socket.timeout, TimeoutError) as exc:
+            print(f"ERROR: Timeout calling Gemini: {exc}")
+            last_exc = exc
+            time.sleep(min(2 ** attempt, 8))
+            continue
         except Exception as exc:
-            raise RuntimeError(f"Gemini API request failed: {exc}") from exc
+            print(f"ERROR: Unexpected error calling Gemini: {exc}")
+            traceback.print_exc()
+            last_exc = exc
+            break
 
-    if last_exc is not None:
-        raise RuntimeError(f"Gemini API request failed: {last_exc}") from last_exc
-
-    payload = json.loads(raw.decode("utf-8"))
-    _log_gemini_payload(payload)
-    candidates = payload.get("candidates") or []
-    if not candidates:
-        return "", GEMINI_MODEL
-    content = candidates[0].get("content") or {}
-    parts = content.get("parts") or []
-    text = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
-    return text.strip(), GEMINI_MODEL
+    if last_exc:
+        raise last_exc
+    return "", ""
 
 
 def handler(event: Dict[str, Any], _context: Any) -> None:
@@ -714,10 +714,15 @@ def handler(event: Dict[str, Any], _context: Any) -> None:
     uploads_table = ddb.Table(UPLOADS_TABLE) if UPLOADS_TABLE else None
     metadata_table = ddb.Table(METADATA_TABLE) if METADATA_TABLE else None
 
+    print(f"DEBUG: Handler started. Config: Model={GEMINI_MODEL}, Tables={ARTICLES_TABLE}/{GENERATION_RUNS_TABLE}")
+
     for record in event.get("Records", []):
+        print(f"DEBUG: Processing record: {record.get('messageId')}")
         try:
             payload = json.loads(record.get("body") or "{}")
+            print(f"DEBUG: Payload keys: {list(payload.keys())}")
         except json.JSONDecodeError:
+            print("DEBUG: Failed to decode JSON body")
             continue
 
         article_id = payload.get("article_id")
@@ -787,9 +792,11 @@ def handler(event: Dict[str, Any], _context: Any) -> None:
                     error_message = ""
             except Exception as exc:
                 error_message = str(exc)
-                print(error_message)
+                print(f"ERROR: Exception during generation logic: {exc}")
+                traceback.print_exc()
         else:
             error_message = "Gemini API key is missing."
+            print("ERROR: Gemini API key is missing")
 
         if article_json:
             title = article_json.get("title") or title
@@ -802,32 +809,45 @@ def handler(event: Dict[str, Any], _context: Any) -> None:
             if not error_message:
                 error_message = "Gemini output was empty; fallback markdown used."
 
-        articles_table.update_item(
-            Key={"article_id": article_id},
-            UpdateExpression=(
-                "SET #status = :status, updated_at = :updated_at, title = :title, "
-                "body_markdown = :body, body_json = :body_json"
-            ),
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": "draft",
-                ":updated_at": created_at,
-                ":title": title,
-                ":body": markdown,
-                ":body_json": article_json or {"status": "fallback"},
-            },
-        )
+        print(f"DEBUG: Ready to update DB. ArticleID={article_id}, RunID={run_id}, Error={error_message}")
+        try:
+            print("DEBUG: Updating Articles Table...")
+            articles_table.update_item(
+                Key={"article_id": article_id},
+                UpdateExpression=(
+                    "SET #status = :status, updated_at = :updated_at, title = :title, "
+                    "body_markdown = :body, body_json = :body_json"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":status": "draft",
+                    ":updated_at": created_at,
+                    ":title": title,
+                    ":body": markdown,
+                    ":body_json": article_json or {"status": "fallback"},
+                },
+            )
+            print("DEBUG: Articles Table Updated.")
+        except Exception as e:
+            print(f"ERROR: Failed to update Articles Table: {e}")
+            traceback.print_exc()
 
-        runs_table.update_item(
-            Key={"run_id": run_id},
-            UpdateExpression=(
-                "SET #status = :status, completed_at = :completed_at, model = :model, error_message = :error"
-            ),
-            ExpressionAttributeNames={"#status": "status"},
-            ExpressionAttributeValues={
-                ":status": "completed",
-                ":completed_at": created_at,
-                ":model": model_used,
-                ":error": error_message,
-            },
-        )
+        try:
+            print("DEBUG: Updating Generation Runs Table...")
+            runs_table.update_item(
+                Key={"run_id": run_id},
+                UpdateExpression=(
+                    "SET #status = :status, completed_at = :completed_at, model = :model, error_message = :error"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":status": "completed",
+                    ":completed_at": created_at,
+                    ":model": model_used,
+                    ":error": error_message,
+                },
+            )
+            print("DEBUG: Generation Runs Table Updated.")
+        except Exception as e:
+            print(f"ERROR: Failed to update Runs Table: {e}")
+            traceback.print_exc()

@@ -14,7 +14,7 @@
 - DynamoDB（uploads, photo metadata, articles, generation runs）
 - SQS（exif queue, generation queue）
 - AWS Location Service（逆ジオコーディング用 Place Index）
-- Secrets Manager（Gemini API Key）
+- GitHub Actions secrets（Gemini API Key。Secrets Manager は不使用）
 - CloudFront（静的 UI）
 
 ## API
@@ -80,28 +80,37 @@ Request:
 記事データを取得します。`body_markdown` と `body_json` を含みます。
 
 ## デプロイ
-前提: Node.js, AWS CDK v2, AWS 認証情報。
+前提: Node.js, AWS CDK v2。
 
+### 自動デプロイ（GitHub Actions）
+`prod` ブランチへ push すると GitHub Actions が自動デプロイを実行します
+（`.github/workflows/deploy.yml`）。ワークフローは OIDC で AWS の IAM ロールを
+assume するため、長期のアクセスキーは不要です。
+
+#### 事前準備
+1. AWS 側で GitHub Actions 用の OIDC IdP と IAM ロールを作成する
+   （CDK デプロイ権限と、スタックが扱うリソースの操作権限が必要）。
+2. GitHub リポジトリの Secrets に以下を登録する。
+   - `GEMINI_API_KEY` … Gemini API キー（生のキー文字列）
+   - `AWS_ROLE_ARN` … assume 先 IAM ロールの ARN
+
+### 手動デプロイ
 ```bash
 npm install
 npm run build
 npx cdk bootstrap
-npx cdk deploy
+GEMINI_API_KEY="YOUR_KEY" npx cdk deploy --require-approval never
 ```
+
+`GEMINI_API_KEY` 環境変数が未設定の場合、デプロイは成功しますが生成ワーカーは
+Gemini を呼び出せません。
 
 出力に `ApiEndpoint` と `WebsiteUrl` が含まれます。
 
 ## Gemini API キー
-スタックで `takoyaki3-blog-writer/gemini-api-key` を作成します。
-Secret の中身は生のキー文字列か JSON のどちらでも可です。
-
-```json
-{
-  "apiKey": "YOUR_KEY"
-}
-```
-
-キー名は `apiKey`, `key`, `GEMINI_API_KEY` を受け付けます。
+Secrets Manager は使用せず、GitHub Actions の secret `GEMINI_API_KEY` から
+Lambda 環境変数 `GEMINI_API_KEY` として注入します。値は生の API キー文字列を
+そのまま設定してください（JSON 形式には対応していません）。
 
 ## Web UI
 静的 UI は `web/` にあります。`config.json` を参照します。

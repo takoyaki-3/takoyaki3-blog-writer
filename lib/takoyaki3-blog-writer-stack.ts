@@ -11,12 +11,26 @@ import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as location from 'aws-cdk-lib/aws-location';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 
+export interface Takoyaki3BlogWriterStackProps extends cdk.StackProps {
+  /**
+   * Gemini API key injected as a Lambda environment variable.
+   * Provided via GitHub Actions secrets instead of Secrets Manager.
+   */
+  readonly geminiApiKey?: string;
+}
+
+/**
+ * AWS region is fixed to Tokyo (ap-northeast-1).
+ * This is the single source of truth for the deployment target region;
+ * workflows do not need to specify it via environment variables.
+ */
+const STACK_REGION = 'ap-northeast-1';
+
 export class Takoyaki3BlogWriterStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
+  constructor(scope: Construct, id: string, props: Takoyaki3BlogWriterStackProps = {}) {
+    super(scope, id, { ...props, env: { ...props.env, region: STACK_REGION } });
 
     const serviceName = 'takoyaki3-blog-writer';
     const uploadPrefix = 'uploads';
@@ -117,11 +131,6 @@ export class Takoyaki3BlogWriterStack extends cdk.Stack {
       description: 'Reverse geocoding for photo uploads',
     });
 
-    const geminiApiKey = new secretsmanager.Secret(this, 'GeminiApiKey', {
-      secretName: `${serviceName}/gemini-api-key`,
-      description: 'Gemini API key for content generation',
-    });
-
     const lambdaEnv = {
       UPLOADS_BUCKET: uploadsBucket.bucketName,
       CONTENT_BUCKET: contentBucket.bucketName,
@@ -133,7 +142,7 @@ export class Takoyaki3BlogWriterStack extends cdk.Stack {
       GENERATION_QUEUE_URL: generationQueue.queueUrl,
       PLACE_INDEX_NAME: placeIndexName,
       UPLOAD_PREFIX: uploadPrefix,
-      GEMINI_API_KEY_SECRET_ARN: geminiApiKey.secretArn,
+      GEMINI_API_KEY: props.geminiApiKey ?? '',
     };
 
     const createUploadFn = new lambda.Function(this, 'CreateUploadFn', {
@@ -227,7 +236,6 @@ export class Takoyaki3BlogWriterStack extends cdk.Stack {
     photoMetadataTable.grantReadData(generationWorkerFn);
     contentBucket.grantPut(generationWorkerFn);
     generationQueue.grantConsumeMessages(generationWorkerFn);
-    geminiApiKey.grantRead(generationWorkerFn);
 
     const placeIndexArn = cdk.Stack.of(this).formatArn({
       service: 'geo',

@@ -9,3 +9,13 @@ cdk.out
 
 .npm-cache
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Local operational/scratch files
+article.json
+key.json
+logs.txt
+log_groups.txt
+
