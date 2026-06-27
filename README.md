@@ -8,6 +8,23 @@
 - Gemini で Markdown 下書きを生成し DynamoDB に保存
 - 最小の操作 UI を S3 + CloudFront で配信
 
+## データ格納先
+
+生成された記事を含め、各データは以下のように格納されます。
+
+| データ | 格納先 | 補足 |
+| --- | --- | --- |
+| **生成された記事（下書き）** | **DynamoDB: `ArticlesTable`** | `article_id` を主キー。本文は `body_markdown`（Markdown 文字列）と `body_json`（タイトル・日付・タグ等の構造化データ）の両方で保存。`GET /v1/articles/{articleId}` で取得 |
+| 写真（元画像） | S3: `UploadsBucket` | `uploads/<upload_id>/<filename>` に presigned URL で直接 PUT |
+| 写真メタデータ（EXIF 等） | DynamoDB: `PhotoMetadataTable` | `exif_worker` が撮影日時・カメラ情報・GPS・逆ジオコーディング結果を保存 |
+| アップロード管理情報 | DynamoDB: `UploadsTable` | `upload_id`、`user_id`、`created_at` 等 |
+| 生成実行履歴 | DynamoDB: `GenerationRunsTable` | `run_id` を主キー。ステータス・使用モデル・エラー情報を記録 |
+| 操作 UI（静的サイト） | S3: `SiteBucket` + CloudFront | `web/` の内容と自動生成 `config.json` を配信 |
+
+> **記事は DynamoDB に保存され、S3 には保存されません。** 記事本文は API（`GET /v1/articles/{articleId}`）経由で取得します。
+>
+> なお、スタックには記事公開用を想定した S3 `ContentBucket` もプロビジョニングされていますが、現状の生成ワーカーはここへ書き込みを行いません（将来の公開機能向けに予約されたリソースです）。
+
 ## 構成
 - API Gateway + Lambda（アップロード、完了通知、生成、再生成、取得）
 - S3（uploads, content, site）
@@ -85,7 +102,8 @@ Request:
 ### 自動デプロイ（GitHub Actions）
 `prod` ブランチへ push すると GitHub Actions が自動デプロイを実行します
 （`.github/workflows/deploy.yml`）。ワークフローは OIDC で AWS の IAM ロールを
-assume するため、長期のアクセスキーは不要です。
+assume するため、長期のアクセスキーは不要です。デプロイ先リージョンは
+スタック定義で東京（`ap-northeast-1`）に固定されています。
 
 #### 事前準備
 1. AWS 側で GitHub Actions 用の OIDC IdP と IAM ロールを作成する
@@ -134,4 +152,5 @@ CDK デプロイ時にホスト先用の `config.json` を自動生成します�
 
 ## 注意点
 - EXIF 抽出は `exif_worker` で JPEG から行います。S3 の HEAD 情報に加えて EXIF 由来の撮影日時・カメラ情報・GPS を保存し、逆ジオコーディングに利用します。
-- 下書きは `ArticlesTable` の `body_markdown` と `body_json` に保存されます。
+- 下書きは `ArticlesTable` の `body_markdown` と `body_json` に保存されます（DynamoDB）。
+- AWS リージョンはスタック定義（`lib/takoyaki3-blog-writer-stack.ts`）で東京（`ap-northeast-1`）に固定されており、ワークフローからは指定しません。
